@@ -1,11 +1,11 @@
 // @flow
 
-"use strict";
+'use strict';
 
-import { NativeModules, processColor } from "react-native";
-import { mapParameters } from "./utils";
+import { NativeModules, processColor } from 'react-native';
+import { mapParameters } from './utils';
 
-import type { CardParameters } from "./types";
+import type { CardParameters } from './types';
 
 const RCTBraintree = NativeModules.Braintree;
 
@@ -13,7 +13,7 @@ var Braintree = {
   setupWithURLScheme(token, urlscheme) {
     return new Promise(function(resolve, reject) {
       RCTBraintree.setupWithURLScheme(token, urlscheme, function(success) {
-        success == true ? resolve(true) : reject("Invalid Token");
+        success == true ? resolve(true) : reject('Invalid Token');
       });
     });
   },
@@ -21,7 +21,7 @@ var Braintree = {
   setup(token) {
     return new Promise(function(resolve, reject) {
       RCTBraintree.setup(token, function(success) {
-        success == true ? resolve(true) : reject("Invalid Token");
+        success == true ? resolve(true) : reject('Invalid Token');
       });
     });
   },
@@ -36,7 +36,6 @@ var Braintree = {
       title: config.title,
       description: config.description,
       amount: config.amount,
-      threeDSecure: config.threeDSecure,
     };
     return new Promise(function(resolve, reject) {
       RCTBraintree.showPaymentViewController(options, function(err, nonce) {
@@ -45,10 +44,18 @@ var Braintree = {
     });
   },
 
-  showPayPalViewController() {
+
+  showVenmoViewController(options = {}) {
     return new Promise(function(resolve, reject) {
-      RCTBraintree.showPayPalViewController(function(err, nonce) {
-        nonce != null ? resolve(nonce) : reject(err);
+      RCTBraintree.showVenmoViewController(options, function(err, venmoData) {
+        venmoData != null ? resolve(venmoData) : reject(err);
+      });
+    });
+  },
+  showPayPalViewController(options = {}) {
+    return new Promise(function(resolve, reject) {
+      RCTBraintree.showPayPalViewController(options, function(err, paypalData) {
+        paypalData != null ? resolve(paypalData) : reject(err);
       });
     });
   },
@@ -63,18 +70,24 @@ var Braintree = {
     }
   },
 
+  showApplePayViewController(options = {}) {
+    return new Promise(function(resolve, reject) {
+      RCTBraintree.showApplePayViewController(options, function(err, cardData) {
+        cardData != null ? resolve(cardData) : reject(err);
+      });
+    });
+  },
+  completeApplePay(status) {
+    return new Promise(function(resolve, reject) {
+      RCTBraintree.completeApplePay(status, function(success) {
+        success == true ? resolve(true) : reject('Failed');
+      });
+    });
+  },
   getDeviceData(options = {}) {
     return new Promise(function(resolve, reject) {
       RCTBraintree.getDeviceData(options, function(err, deviceData) {
         deviceData != null ? resolve(deviceData) : reject(err);
-      });
-    });
-  },
-
-  showApplePayViewController(options = {}) {
-    return new Promise(function(resolve, reject) {
-      RCTBraintree.showApplePayViewController(options, function(err, nonce) {
-        nonce != null ? resolve(nonce) : reject(err);
       });
     });
   },

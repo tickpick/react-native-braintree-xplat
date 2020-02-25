@@ -15,6 +15,7 @@
 #import "BraintreeApplePay.h"
 #import "BraintreeCard.h"
 #import "BraintreeUI.h"
+#import "BraintreeVenmo.h"
 #import "Braintree3DSecure.h"
 #import "BTDataCollector.h"
 #import "PPDataCollector.h"
