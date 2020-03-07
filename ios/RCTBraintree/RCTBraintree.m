@@ -152,28 +152,41 @@ RCT_EXPORT_METHOD(showPayPalViewController:(NSDictionary *)options callback:(RCT
     });
 }
 
-RCT_REMAP_METHOD(getCardNonce,
-                 parameters:(NSDictionary *)parameters
-                 resolve:(RCTPromiseResolveBlock)resolve
-                 reject:(RCTPromiseRejectBlock)reject)
+RCT_EXPORT_METHOD(getCardNonce: (NSDictionary *)parameters callback: (RCTResponseSenderBlock)callback)
 {
     BTCardClient *cardClient = [[BTCardClient alloc] initWithAPIClient: self.braintreeClient];
     BTCard *card = [[BTCard alloc] initWithParameters:parameters];
     //card.shouldValidate = YES;
 
-    NSLog(@"Card: %@", parameters);
     [cardClient tokenizeCard:card
                   completion:^(BTCardNonce *tokenizedCard, NSError *error) {
+                      NSArray *args = @[];
 
                       if ( error == nil ) {
-                          resolve(tokenizedCard.nonce);
+                          args = @[[NSNull null], tokenizedCard.nonce];
                       } else {
-                          NSLog(@"Error: %@", error);
-                          reject(@"Error getting nonce", @"Cannot process this credit card type.", error);
+                          args = @[error.description, [NSNull null]];
+                          /*
+                          else if ( error != nil ) {
+
+                          }
+                          NSError *serialisationErr;
+                          NSData *jsonData = [NSJSONSerialization dataWithJSONObject:[error userInfo]
+                                                                             options:NSJSONWritingPrettyPrinted
+                                                                               error:&serialisationErr];
+
+                          if (! jsonData) {
+                              args = @[serialisationErr.description, [NSNull null]];
+                          } else {
+                              NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                              args = @[jsonString, [NSNull null]];
+                          }
+                           */
                       }
+
+                      callback(args);
                   }];
 }
-
 
 RCT_EXPORT_METHOD(getDeviceData:(NSDictionary *)options callback:(RCTResponseSenderBlock)callback)
 {
@@ -227,7 +240,7 @@ RCT_EXPORT_METHOD(showVenmoViewController:(NSDictionary *)options callback:(RCTR
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         BTVenmoDriver *venmoDriver = [[BTVenmoDriver alloc] initWithAPIClient:self.braintreeClient];
-            [venmoDriver authorizeAccountAndVault:NO completion:^(BTVenmoAccountNonce *tokenizedVenmoAccount, NSError *error) {
+        [venmoDriver authorizeAccountAndVault:NO completion:^(BTVenmoAccountNonce *tokenizedVenmoAccount, NSError *error) {
             if ( error == nil && tokenizedVenmoAccount != nil ) {
                 NSString *deviceData = [PPDataCollector collectPayPalDeviceData];
                 callback(@[[NSNull null], @{
@@ -248,26 +261,30 @@ RCT_EXPORT_METHOD(showApplePayViewController:(NSDictionary *)options callback:(R
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         self.callback = callback;
+
         PKPaymentRequest *paymentRequest = [[PKPaymentRequest alloc] init];
-        NSArray *items = options[@"paymentSummaryItems"];
-        NSLog(@"Options items: %@", items);
-        NSMutableArray *paymentSummaryItems = [NSMutableArray new];
-        for(NSDictionary *item in items) {
-            NSString *label = item[@"label"];
-            NSString *amount = [item[@"amount"] stringValue];
-            [paymentSummaryItems addObject:[PKPaymentSummaryItem summaryItemWithLabel:label amount:[NSDecimalNumber decimalNumberWithString:amount]]];
+
+        if (@available(iOS 11.0, *)) {
+            paymentRequest.requiredBillingContactFields = [NSSet setWithObjects:PKContactFieldPostalAddress, PKContactFieldName, PKContactFieldPhoneNumber, nil];
+        } else {
+            // Fallback on earlier version
+            paymentRequest.requiredBillingAddressFields = PKAddressFieldNone;
+        }
+        if (options[@"requestShipping"]) {
+            if (@available(iOS 11.0, *)) {
+                paymentRequest.requiredShippingContactFields = [NSSet setWithObjects:PKContactFieldPostalAddress, nil];
+            } else {
+                paymentRequest.requiredShippingAddressFields = PKAddressFieldNone;
+            }
         }
 
-        paymentRequest.requiredBillingAddressFields = PKAddressFieldNone;
-        paymentRequest.shippingMethods = nil;
-        paymentRequest.requiredShippingAddressFields = PKAddressFieldNone;
-        paymentRequest.paymentSummaryItems = paymentSummaryItems;
-
-        paymentRequest.merchantIdentifier = options[@"merchantIdentifier"];;
+        paymentRequest.shippingMethods = [self getShippingMethodsFromDetails:options];
+        paymentRequest.paymentSummaryItems = [self getPaymentSummaryItemsFromDetails:options];
+        paymentRequest.merchantIdentifier = options[@"merchantIdentifier"];
         paymentRequest.supportedNetworks = @[PKPaymentNetworkVisa, PKPaymentNetworkMasterCard, PKPaymentNetworkAmex, PKPaymentNetworkDiscover];
         paymentRequest.merchantCapabilities = PKMerchantCapability3DS;
-        paymentRequest.currencyCode = @"USD";
-        paymentRequest.countryCode = @"US";
+        paymentRequest.currencyCode = options[@"currencyCode"];
+        paymentRequest.countryCode = options[@"countryCode"];
         if ([paymentRequest respondsToSelector:@selector(setShippingType:)]) {
             paymentRequest.shippingType = PKShippingTypeDelivery;
         }
@@ -338,14 +355,14 @@ RCT_EXPORT_METHOD(showApplePayViewController:(NSDictionary *)options callback:(R
                                             [self.reactRoot dismissViewControllerAnimated:YES completion:nil];
                                         }];
         } else {
-            runCallback = FALSE;
-            self.callback(@[[NSNull null], paymentMethodNonce.nonce]);
-        }
+        runCallback = FALSE;
+        self.callback(@[[NSNull null],paymentMethodNonce.nonce]);
+    }
     }
 
     if (!self.threeDSecure) {
-        [self.reactRoot dismissViewControllerAnimated:YES completion:nil];
-    }
+    [self.reactRoot dismissViewControllerAnimated:YES completion:nil];
+}
 }
 
 - (void)dropInViewControllerDidCancel:(__unused BTDropInViewController *)viewController {
@@ -376,10 +393,36 @@ RCT_EXPORT_METHOD(showApplePayViewController:(NSDictionary *)options callback:(R
     BTApplePayClient *applePayClient = [[BTApplePayClient alloc] initWithAPIClient:self.braintreeClient];
     [applePayClient tokenizeApplePayPayment:payment completion:^(BTApplePayCardNonce * _Nullable tokenizedApplePayPayment, NSError * _Nullable error) {
         if (error) {
+            NSLog(@"paymentAuthorizationViewController = %@", error);
             completion(PKPaymentAuthorizationStatusFailure);
             self.callback(@[@"Error processing card", [NSNull null]]);
         } else {
+            NSLog(@"billingPostalCode = %@", payment.billingContact.postalAddress.postalCode);
+
+            NSDictionary *billingAddress = @{
+                                             @"name": [NSString stringWithFormat:@"%@ %@", payment.billingContact.name.givenName, payment.billingContact.name.familyName],
+                                             @"addressLine": payment.billingContact.postalAddress.street,
+                                             @"city": payment.billingContact.postalAddress.city,
+                                             @"region": payment.billingContact.postalAddress.state,
+                                             @"country": [payment.billingContact.postalAddress.ISOCountryCode uppercaseString],
+                                             @"postalCode": payment.billingContact.postalAddress.postalCode,
+                                             @"phone": (!payment.billingContact.phoneNumber || payment.billingContact.phoneNumber.stringValue.length == 0) ? [NSNull null] : payment.billingContact.phoneNumber,
+                                             };
+            NSDictionary *shippingAdress = @{};
+
+            if(payment.shippingContact){
+                        shippingAdress = @{
+                                             @"addressLine": payment.shippingContact.postalAddress.street,
+                                             @"city": payment.shippingContact.postalAddress.city,
+                                             @"region": payment.shippingContact.postalAddress.state,
+                                             @"country": [payment.shippingContact.postalAddress.ISOCountryCode uppercaseString],
+                                             @"postalCode": payment.shippingContact.postalAddress.postalCode,
+                                             };
+            }
+
             self.callback(@[[NSNull null], @{
+                                @"billing_address": billingAddress,
+                                @"shipping_address": shippingAdress,
                                 @"nonce": tokenizedApplePayPayment.nonce,
                                 @"type": tokenizedApplePayPayment.type,
                                 @"localizedDescription": tokenizedApplePayPayment.localizedDescription
@@ -398,4 +441,67 @@ RCT_EXPORT_METHOD(showApplePayViewController:(NSDictionary *)options callback:(R
     // Move along. Nothing to see here.
 }
 
+// Helper function to convert our details to PKPaymentSummaryItems
+- (NSArray<PKPaymentSummaryItem *> *_Nonnull)getPaymentSummaryItemsFromDetails:(NSDictionary *_Nonnull)details
+{
+    // Setup `paymentSummaryItems` array
+    NSMutableArray <PKPaymentSummaryItem *> * paymentSummaryItems = [NSMutableArray array];
+
+    // Add `displayItems` to `paymentSummaryItems`
+    NSArray *displayItems = details[@"displayItems"];
+    if (displayItems.count > 0) {
+        for (NSDictionary *displayItem in displayItems) {
+            [paymentSummaryItems addObject: [self convertDisplayItemToPaymentSummaryItem:displayItem]];
+        }
+    }
+
+    // Add shipping to `paymentSummaryItems`
+    if([details objectForKey:@"shipping"]) {
+        NSDictionary *shipping = details[@"shipping"];
+        [paymentSummaryItems addObject: [self convertDisplayItemToPaymentSummaryItem:shipping]];
+    }
+
+    // Add total to `paymentSummaryItems`
+    NSDictionary *total = details[@"total"];
+    [paymentSummaryItems addObject: [self convertDisplayItemToPaymentSummaryItem:total]];
+
+    return paymentSummaryItems;
+}
+- (NSArray<PKShippingMethod *> *_Nonnull)getShippingMethodsFromDetails:(NSDictionary *_Nonnull)details
+{
+    // Setup `shippingMethods` array
+    NSMutableArray <PKShippingMethod *> * shippingMethods = [NSMutableArray array];
+
+    // Add `shippingOptions` to `shippingMethods`
+    NSArray *shippingOptions = details[@"shippingOptions"];
+    if (shippingOptions.count > 0) {
+        for (NSDictionary *shippingOption in shippingOptions) {
+            [shippingMethods addObject: [self convertShippingOptionToShippingMethod:shippingOption]];
+        }
+    }
+
+    return shippingMethods;
+}
+
+- (PKShippingMethod *_Nonnull)convertShippingOptionToShippingMethod:(NSDictionary *_Nonnull)shippingOption
+{
+    PKShippingMethod *shippingMethod = [PKShippingMethod summaryItemWithLabel:shippingOption[@"label"] amount:[NSDecimalNumber decimalNumberWithString: shippingOption[@"amount"][@"value"]]];
+    shippingMethod.identifier = shippingOption[@"id"];
+
+    // shippingOption.detail is not part of the PaymentRequest spec.
+    if ([shippingOption[@"detail"] isKindOfClass:[NSString class]]) {
+        shippingMethod.detail = shippingOption[@"detail"];
+    } else {
+        shippingMethod.detail = @"";
+    }
+
+    return shippingMethod;
+}
+- (PKPaymentSummaryItem *_Nonnull)convertDisplayItemToPaymentSummaryItem:(NSDictionary *_Nonnull)displayItem;
+{
+    NSDecimalNumber *decimalNumberAmount = [NSDecimalNumber decimalNumberWithString:displayItem[@"amount"]];
+    PKPaymentSummaryItem *paymentSummaryItem = [PKPaymentSummaryItem summaryItemWithLabel:displayItem[@"label"] amount:decimalNumberAmount];
+
+    return paymentSummaryItem;
+}
 @end
