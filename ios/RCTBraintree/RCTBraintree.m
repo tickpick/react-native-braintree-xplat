@@ -152,25 +152,39 @@ RCT_EXPORT_METHOD(showPayPalViewController:(NSDictionary *)options callback:(RCT
     });
 }
 
-RCT_REMAP_METHOD(getCardNonce,
-                 parameters:(NSDictionary *)parameters
-                 resolve:(RCTPromiseResolveBlock)resolve
-                 reject:(RCTPromiseRejectBlock)reject)
+RCT_EXPORT_METHOD(getCardNonce: (NSDictionary *)parameters callback: (RCTResponseSenderBlock)callback)
 {
     BTCardClient *cardClient = [[BTCardClient alloc] initWithAPIClient: self.braintreeClient];
     BTCard *card = [[BTCard alloc] initWithParameters:parameters];
     //card.shouldValidate = YES;
 
-    NSLog(@"Card: %@", parameters);
     [cardClient tokenizeCard:card
                   completion:^(BTCardNonce *tokenizedCard, NSError *error) {
+                      NSArray *args = @[];
 
                       if ( error == nil ) {
-                          resolve(tokenizedCard.nonce);
+                          args = @[[NSNull null], tokenizedCard.nonce];
                       } else {
-                          NSLog(@"Error: %@", error);
-                          reject(@"Error getting nonce", @"Cannot process this credit card type.", error);
+                          args = @[error.description, [NSNull null]];
+                          /*
+                          else if ( error != nil ) {
+
+                          }
+                          NSError *serialisationErr;
+                          NSData *jsonData = [NSJSONSerialization dataWithJSONObject:[error userInfo]
+                                                                             options:NSJSONWritingPrettyPrinted
+                                                                               error:&serialisationErr];
+
+                          if (! jsonData) {
+                              args = @[serialisationErr.description, [NSNull null]];
+                          } else {
+                              NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+                              args = @[jsonString, [NSNull null]];
+                          }
+                           */
                       }
+
+                      callback(args);
                   }];
 }
 
