@@ -282,12 +282,15 @@ RCT_EXPORT_METHOD(showApplePayViewController:(NSDictionary *)options callback:(R
     });
 }
 
-- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation {
+- (BOOL)application:(UIApplication *)application
+            openURL:(NSURL *)url
+            options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options {
 
     if ([url.scheme localizedCaseInsensitiveCompare:URLScheme] == NSOrderedSame) {
-        return [BTAppSwitch handleOpenURL:url sourceApplication:sourceApplication];
+        return [BTAppSwitch handleOpenURL:url options:options];
     }
     return NO;
+
 }
 
 #pragma mark - BTViewControllerPresentingDelegate

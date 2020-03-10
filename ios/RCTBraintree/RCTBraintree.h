@@ -37,6 +37,6 @@
 @property (nonatomic, strong) NSDictionary *threeDSecureOptions;
 
 + (instancetype)sharedInstance;
-- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url;
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options;
 
 @end
